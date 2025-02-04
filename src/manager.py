@@ -38,8 +38,10 @@ def inferModelInstance(data: dict[str, Any]):
     with lock:
         port = processes[f"{model_name}_{model_type}"]["port"]
         processes[f"{model_name}_{model_type}"]["last_response_time"] = time.time()
-    url = f"http://localhost:{processes[f'{model_name}_{model_type}']['port']}/infer"
-    while True:
+    url = f"http://localhost:{port}/infer"
+    max_retries = 5
+    retries = 0
+    while retries < max_retries:
         try:
             response = requests.post(url, json=data)
             if response.status_code == 200:
@@ -48,7 +50,12 @@ def inferModelInstance(data: dict[str, Any]):
                     processes[f"{model_name}_{model_type}"]["last_response_time"] = time.time()
                 break
         except Exception as e:
-            logging.warning(f"{e} on {port}, retrying...")
+            retries += 1
+            logging.warning(f"{e} on {port}, retrying... ({retries}/{max_retries})")
+            time.sleep(2)
+    else:
+        logging.error(f"Failed to get a successful, response after {max_retries} retries.")
+        response = None
     return response
 
 def wait_for_server_start(port: int):

@@ -20,7 +20,13 @@ class ModelServer:
 
     def start_server(self):
         app = Flask(__name__)
-        available_gpus = get_optimal_gpu_set(self.model_name, dtype="fp16")
+        if self.type in ["text-generation", "sent-trans"]:
+            if "/" in self.model_name:
+                available_gpus = get_optimal_gpu_set(self.model_name, dtype="fp16")
+            else:
+                available_gpus = get_optimal_gpu_set(
+                    f"sentence-transformers/{self.model_name}", dtype="fp16"
+                )
         if self.type == "text-generation":
             if not available_gpus:
                 logging.error("No available GPUs to load the model.")
