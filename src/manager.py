@@ -39,7 +39,7 @@ def inferModelInstance(data: dict[str, Any]):
         port = processes[f"{model_name}_{model_type}"]["port"]
         processes[f"{model_name}_{model_type}"]["last_response_time"] = time.time()
     url = f"http://localhost:{port}/infer"
-    max_retries = 5
+    max_retries = 2
     retries = 0
     while retries < max_retries:
         try:
