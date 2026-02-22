@@ -2,35 +2,110 @@ from huggingface_hub import hf_hub_download, list_repo_files
 from transformers import AutoConfig
 import torch
 import pynvml
+import json
 import socket
 from typing import Literal, List, Tuple
 import os
 import logging
+from logging.handlers import RotatingFileHandler
+from PIL import Image
+import base64
+from io import BytesIO
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Get module name dynamically
+module_name = os.path.splitext(os.path.basename(__file__))[0]
+
+# Configure logger for this module
+logger = logging.getLogger(module_name)
+logger.setLevel(logging.DEBUG)
+
+# Create a file handler per module
+os.makedirs("logs", exist_ok=True)
+log_file = f"logs/{module_name}.log"
+file_handler = RotatingFileHandler(log_file, maxBytes=100*1024*1024, backupCount=5)
+
+# Create and set formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+
+# Add handler if not already added
+if not logger.hasHandlers():
+    logger.addHandler(file_handler)
+    
+logger.debug(f"Logger initialized for {module_name}")
+
+# def get_model_size(model_name: str) -> float:
+#     """
+#     Fetch the model size (in GB) from the Hugging Face safetensors index.
+
+#     Args:
+#         model_name (str): The name of the model.
+
+#     Returns:
+#         float: The size of the model in GB, or None if an error occurs.
+#     """
+#     try:            
+#         repo_files = list_repo_files(model_name)
+#         safetensors_files = [file for file in repo_files if file.endswith('.safetensors')]
+
+#         total_size_bytes = 0
+#         for file in safetensors_files:
+#             file_path = hf_hub_download(model_name, file)
+#             total_size_bytes += os.path.getsize(file_path)
+
+#         total_size_gb = total_size_bytes / 1e9  # Convert bytes to GB
+#         logger.info(f"Model size for {model_name}: {total_size_gb} GB")
+#         return total_size_gb
+
+#     except Exception as e:
+#         logger.error(f"Error fetching model size: {e}")
+#         return None
 
 def get_model_size(model_name: str) -> float:
     """
     Fetch the model size (in GB) from the Hugging Face safetensors index.
+    If it's an adapter model, also include the base model size.
 
     Args:
         model_name (str): The name of the model.
 
     Returns:
-        float: The size of the model in GB, or None if an error occurs.
+        float: The total size of the model in GB, or None if an error occurs.
     """
-    try:            
-        repo_files = list_repo_files(model_name)
-        safetensors_files = [file for file in repo_files if file.endswith('.safetensors')]
+    def get_size(model: str) -> float:
+        try:
+            repo_files = list_repo_files(model)
+            safetensors_files = [file for file in repo_files if file.endswith('.safetensors')]
 
-        total_size_bytes = 0
-        for file in safetensors_files:
-            file_path = hf_hub_download(model_name, file)
-            total_size_bytes += os.path.getsize(file_path)
+            total_size_bytes = 0
+            for file in safetensors_files:
+                file_path = hf_hub_download(model, file)
+                total_size_bytes += os.path.getsize(file_path)
 
-        total_size_gb = total_size_bytes / 1e9  # Convert bytes to GB
-        logger.info(f"Model size for {model_name}: {total_size_gb} GB")
+            return total_size_bytes / 1e9
+        except Exception as e:
+            logger.error(f"Error fetching size for {model}: {e}")
+            return 0.0
+
+    try:
+        total_size_gb = get_size(model_name)
+
+        # Look for adapter config to find base model
+        config_files = ["adapter_config.json", "adapter_config.json", "config.json"]
+        for config_file in config_files:
+            try:
+                file_path = hf_hub_download(model_name, config_file)
+                with open(file_path, "r") as f:
+                    config = json.load(f)
+                base_model = config.get("base_model_name_or_path") or config.get("base_model")
+                if base_model:
+                    logger.info(f"Adapter model detected. Base model: {base_model}")
+                    total_size_gb += get_size(base_model)
+                    break
+            except Exception:
+                continue  # Try next config file if this one fails
+
+        logger.info(f"Total model size for {model_name}: {total_size_gb:.2f} GB")
         return total_size_gb
 
     except Exception as e:
@@ -66,9 +141,10 @@ def estimate_memory(model_name: str, dtype: Literal["fp32", "fp16", "int8"]="fp1
             return None, None, None
 
     dtype_offset = {"fp32": 4, "fp16": 2, "int8": 1}.get(dtype, 2)
-    activation_memory: float = model_size_gb * 0.2 * dtype_offset
+    activation_memory: float = model_size_gb * 0.5 * dtype_offset
     
-    total_memory: float = model_size_gb * 1.2
+    total_memory: float = model_size_gb * (1 + 9.92)
+    # total_memory: float = model_size_gb + 1
     logger.info(f"Estimated memory for {model_name} with dtype {dtype}: model_size_gb={model_size_gb}, activation_memory={activation_memory}, total_memory={total_memory}")
     return model_size_gb, activation_memory, total_memory
 
@@ -104,6 +180,8 @@ def select_optimal_gpus(required_memory: float) -> List[int]:
         List[int]: A list of selected GPU indices.
     """
     gpus = get_available_gpus()
+    # gpus = sorted(gpus, key=lambda x: x[1], reverse=True)
+    # return [gpu for gpu, _ in gpus]
 
     possible_gpus: List[Tuple[int, float]] = []
     possible_gpus.extend(
@@ -144,6 +222,7 @@ def get_optimal_gpu_set(model_name: str, dtype: Literal["fp32", "fp16", "int8"]=
     if total_mem is None:
         logger.error("Error estimating memory requirements.")
         return []
+    # total_mem = 0
     return select_optimal_gpus(total_mem)
 
 def get_available_ports(start: int=5001, end: int=5100):
@@ -155,3 +234,7 @@ def get_available_ports(start: int=5001, end: int=5100):
                 available_ports.append(port)
     logging.info(f"Available ports: {available_ports}")
     return available_ports
+
+def base64_to_image(base64_str: str) -> Image.Image:
+    image_data = base64.b64decode(base64_str)
+    return Image.open(BytesIO(image_data))
