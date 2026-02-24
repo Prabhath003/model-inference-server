@@ -1,4 +1,3 @@
-
 from .. import logger
 from .clip_worker import CLIPWorker
 from .image_text_to_text_worker import ImageTextToTextWorker
@@ -11,5 +10,5 @@ __all__ = [
     "ImageTextToTextWorker",
     "SentTransWorker",
     "TextGenerationBnbWorker",
-    "TextGenerationWorker"
+    "TextGenerationWorker",
 ]

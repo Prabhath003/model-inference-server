@@ -12,6 +12,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class ModelServerClient:
     """Client for interacting with the Model Server API."""
 
@@ -23,7 +24,7 @@ class ModelServerClient:
             base_url: Base URL of the model server (default: http://localhost:1121)
             timeout: Default timeout for requests in seconds (default: 300)
         """
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
 
@@ -33,7 +34,7 @@ class ModelServerClient:
         model_name: str,
         model_type: str,
         timeout: Optional[int] = None,
-        max_retries: int = 3
+        max_retries: int = 3,
     ) -> Dict[str, Any]:
         """
         Make a request to the model server.
@@ -58,13 +59,17 @@ class ModelServerClient:
             "model_name": model_name,
             "payload": payload,
             "timeout": timeout or self.timeout,
-            "max_retries": max_retries
+            "max_retries": max_retries,
         }
 
-        logger.info(f"Making request to {url} with type={model_type}, model={model_name}")
+        logger.info(
+            f"Making request to {url} with type={model_type}, model={model_name}"
+        )
 
         try:
-            response = self.session.post(url, json=data, timeout=timeout or self.timeout)
+            response = self.session.post(
+                url, json=data, timeout=timeout or self.timeout
+            )
             response.raise_for_status()
             result = response.json()
 
@@ -83,7 +88,7 @@ class ModelServerClient:
         self,
         input_texts: Union[str, List[str]],
         model: str = "text-embedding-3-small",
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> List[List[float]]:
         """
         Create embeddings using Azure OpenAI embedding model.
@@ -105,16 +110,13 @@ class ModelServerClient:
         if isinstance(input_texts, str):
             input_texts = [input_texts]
 
-        payload: Dict[str, Any] = {
-            "input": input_texts,
-            "model": model
-        }
+        payload: Dict[str, Any] = {"input": input_texts, "model": model}
 
         response = self._make_request(
             payload=payload,
             model_name=model,
             model_type="openai-embedding",
-            timeout=timeout
+            timeout=timeout,
         )
 
         return response["response"]
@@ -127,7 +129,7 @@ class ModelServerClient:
         model: str = "gpt-4.1-mini",
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> str:
         """
         Create a chat completion using Azure OpenAI.
@@ -155,17 +157,14 @@ class ModelServerClient:
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            "stream": False
+            "stream": False,
         }
 
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
         response = self._make_request(
-            payload=payload,
-            model_name=model,
-            model_type="openai",
-            timeout=timeout
+            payload=payload, model_name=model, model_type="openai", timeout=timeout
         )
 
         return response["response"]
@@ -177,7 +176,7 @@ class ModelServerClient:
         sentences: Union[str, List[str]],
         model: str = "sentence-transformers/all-MiniLM-L6-v2",
         normalize_embeddings: bool = False,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> Union[List[float], List[List[float]]]:
         """
         Encode sentences using Sentence Transformers.
@@ -200,14 +199,11 @@ class ModelServerClient:
         """
         payload: Dict[str, Any] = {
             "sentences": sentences,
-            "normalize_embeddings": normalize_embeddings
+            "normalize_embeddings": normalize_embeddings,
         }
 
         response = self._make_request(
-            payload=payload,
-            model_name=model,
-            model_type="sent-trans",
-            timeout=timeout
+            payload=payload, model_name=model, model_type="sent-trans", timeout=timeout
         )
 
         return response["response"]
@@ -221,7 +217,7 @@ class ModelServerClient:
         max_new_tokens: int = 512,
         temperature: float = 0.7,
         top_p: float = 0.9,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> Union[str, List[str]]:
         """
         Generate text using local text generation models.
@@ -249,14 +245,14 @@ class ModelServerClient:
             "max_new_tokens": max_new_tokens,
             "temperature": temperature,
             "top_p": top_p,
-            "do_sample": True
+            "do_sample": True,
         }
 
         response = self._make_request(
             payload=payload,
             model_name=model,
             model_type="text-generation",
-            timeout=timeout
+            timeout=timeout,
         )
 
         return response["response"]
@@ -269,7 +265,7 @@ class ModelServerClient:
         model: str = "us.anthropic.claude-sonnet-4-20250514-v1:0",
         max_tokens: int = 4000,
         temperature: float = 0.1,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> str:
         """
         Create a completion using Claude via AWS Bedrock.
@@ -294,14 +290,11 @@ class ModelServerClient:
         payload = {
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": temperature
+            "temperature": temperature,
         }
 
         response = self._make_request(
-            payload=payload,
-            model_name=model,
-            model_type="claude",
-            timeout=timeout
+            payload=payload, model_name=model, model_type="claude", timeout=timeout
         )
 
         return response["response"]
@@ -312,7 +305,7 @@ class ModelServerClient:
         self,
         images: List[str],
         model: str = "openai/clip-vit-base-patch32",
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> List[List[float]]:
         """
         Get image features using CLIP model.
@@ -325,16 +318,10 @@ class ModelServerClient:
         Returns:
             List of image feature vectors
         """
-        payload: Dict[str, Any] = {
-            "features": "image",
-            "images": images
-        }
+        payload: Dict[str, Any] = {"features": "image", "images": images}
 
         response = self._make_request(
-            payload=payload,
-            model_name=model,
-            model_type="clip",
-            timeout=timeout
+            payload=payload, model_name=model, model_type="clip", timeout=timeout
         )
 
         return response["response"]
@@ -343,7 +330,7 @@ class ModelServerClient:
         self,
         texts: List[str],
         model: str = "openai/clip-vit-base-patch32",
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
     ) -> List[List[float]]:
         """
         Get text features using CLIP model.
@@ -356,16 +343,10 @@ class ModelServerClient:
         Returns:
             List of text feature vectors
         """
-        payload: Dict[str, Any] = {
-            "features": "text",
-            "text": texts
-        }
+        payload: Dict[str, Any] = {"features": "text", "text": texts}
 
         response = self._make_request(
-            payload=payload,
-            model_name=model,
-            model_type="clip",
-            timeout=timeout
+            payload=payload, model_name=model, model_type="clip", timeout=timeout
         )
 
         return response["response"]
@@ -407,7 +388,7 @@ if __name__ == "__main__":
         print("=" * 50)
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "What is the capital of France?"}
+            {"role": "user", "content": "What is the capital of France?"},
         ]
         response = client.openai_chat_completion(messages)
         print(f"Response: {response}")
@@ -418,8 +399,7 @@ if __name__ == "__main__":
         print("=" * 50)
         sentences = ["This is a test sentence", "Another test sentence"]
         sent_embeddings = client.create_transformer_embeddings(
-            sentences,
-            model="sentence-transformers/all-MiniLM-L6-v2"
+            sentences, model="sentence-transformers/all-MiniLM-L6-v2"
         )
         print(f"Created {len(sent_embeddings)} sentence embeddings")
         print(f"Embedding dimension: {len(sent_embeddings[0])}")
@@ -429,7 +409,10 @@ if __name__ == "__main__":
         print("Example 4: Claude completion")
         print("=" * 50)
         claude_messages = [
-            {"role": "user", "content": "Explain what a neural network is in one sentence."}
+            {
+                "role": "user",
+                "content": "Explain what a neural network is in one sentence.",
+            }
         ]
         claude_response = client.claude_chat_completion(claude_messages)
         print(f"Claude response: {claude_response}")

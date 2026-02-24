@@ -14,19 +14,20 @@ logger.setLevel(logging.DEBUG)
 # Create a file handler per module
 os.makedirs("logs", exist_ok=True)
 log_file = f"logs/{module_name}.log"
-file_handler = RotatingFileHandler(log_file, maxBytes=100*1024*1024, backupCount=5)
+file_handler = RotatingFileHandler(log_file, maxBytes=100 * 1024 * 1024, backupCount=5)
 
 # Create and set formatter
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(formatter)
 
 # Add handler if not already added
 if not logger.hasHandlers():
     logger.addHandler(file_handler)
-    
+
 logger.debug(f"Logger initialized for {module_name}")
 
 load_dotenv()
+
 
 def send_message(type: str, key: str):
     try:
@@ -35,10 +36,10 @@ def send_message(type: str, key: str):
         client = Client(account_sid, auth_token)
 
         message = client.messages.create(
-        from_=os.environ.get("TWILIO_FROM_"),
-        content_sid=os.environ.get("TWILIO_CONTENT_SID"),
-        content_variables=f'{{"1":"{type}","2":"{key}"}}',
-        to=os.environ.get("TWLIO_TO", "")
+            from_=os.environ.get("TWILIO_FROM_"),
+            content_sid=os.environ.get("TWILIO_CONTENT_SID"),
+            content_variables=f'{{"1":"{type}","2":"{key}"}}',
+            to=os.environ.get("TWLIO_TO", ""),
         )
         print(message.sid)
     except Exception as e:

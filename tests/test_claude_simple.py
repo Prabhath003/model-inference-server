@@ -12,13 +12,16 @@ payload = {
     "model_name": "us.anthropic.claude-sonnet-4-20250514-v1:0",
     "payload": {
         "messages": [
-            {"role": "user", "content": "Hello Claude! Tell me a fun fact about Python programming."}
+            {
+                "role": "user",
+                "content": "Hello Claude! Tell me a fun fact about Python programming.",
+            }
         ],
         "max_tokens": 4000,
-        "temperature": 0.7
+        "temperature": 0.7,
     },
     "timeout": 60,
-    "max_retries": 3
+    "max_retries": 3,
 }
 
 print("Sending request to Claude API...")

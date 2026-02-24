@@ -27,34 +27,39 @@ from transformers import AutoModelForCausalLM
 import gc
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
 
 class SimpleQwenProcessor:
     """Simplified Qwen processor without complex threading"""
-   
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-14B-Instruct", num_instances: int = 3):
+
+    def __init__(
+        self, model_name: str = "Qwen/Qwen2.5-14B-Instruct", num_instances: int = 3
+    ):
         self.model_name = model_name
         self.num_instances = num_instances
         self.models = []
         self.tokenizers = []
         self.current_instance = 0
-       
+
         logger.info(f"Initializing {num_instances} Qwen model instances...")
         self._initialize_models()
-   
+
     def _initialize_models(self):
         """Initialize model instances on different GPUs"""
         for i in range(self.num_instances):
             device = f"cuda:{i % 2}"  # Distribute across 2 GPUs
-           
+
             logger.info(f"Loading model instance {i+1} on {device}")
-           
+
             # Load tokenizer
             tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
-           
+
             # Load model with memory optimization
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
@@ -66,26 +71,28 @@ class SimpleQwenProcessor:
                 use_cache=True,
                 # torch_dtype="auto"
             )
-           
+
             self.models.append(model)
             self.tokenizers.append(tokenizer)
-           
+
             logger.info(f"Model instance {i+1} loaded successfully")
-   
+
     def generate_response(self, prompt: str, instance_id: int = None) -> str:
         """Generate response using specified or round-robin instance"""
         if instance_id is None:
             instance_id = self.current_instance
             self.current_instance = (self.current_instance + 1) % self.num_instances
-       
+
         model = self.models[instance_id]
         tokenizer = self.tokenizers[instance_id]
-       
+
         try:
             # Generate response
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=8192)
+            inputs = tokenizer(
+                prompt, return_tensors="pt", truncation=True, max_length=8192
+            )
             inputs = {k: v.to(model.device) for k, v in inputs.items()}
-           
+
             with torch.no_grad():
                 outputs = model.generate(
                     **inputs,
@@ -96,23 +103,25 @@ class SimpleQwenProcessor:
                     num_beams=1,
                     do_sample=True,
                     pad_token_id=tokenizer.eos_token_id,
-                    eos_token_id=tokenizer.eos_token_id
+                    eos_token_id=tokenizer.eos_token_id,
                 )
-            if hasattr(model, 'past_key_values'):
+            if hasattr(model, "past_key_values"):
                 model.past_key_values = None
             torch.cuda.empty_cache()
             gc.collect()
-            response = tokenizer.decode(outputs[0][len(inputs['input_ids'][0]):], skip_special_tokens=True)
+            response = tokenizer.decode(
+                outputs[0][len(inputs["input_ids"][0]) :], skip_special_tokens=True
+            )
             return response
-           
+
         except Exception as e:
             logger.error(f"Error in model {instance_id}: {str(e)}")
             return f"Error generating response: {str(e)}"
-   
+
     def process_batch_parallel(self, prompts: List[str]) -> List[str]:
         """Process a batch of prompts in parallel using ThreadPoolExecutor"""
         results = [None] * len(prompts)
-       
+
         def process_single(prompt_data):
             idx, prompt = prompt_data
             instance_id = idx % self.num_instances
@@ -122,7 +131,7 @@ class SimpleQwenProcessor:
             except Exception as e:
                 logger.error(f"Error processing prompt {idx}: {str(e)}")
                 return idx, f"Error: {str(e)}"
-       
+
         if len(prompts) <= 3:
             results = []
             for i, prompt in enumerate(prompts):
@@ -130,7 +139,7 @@ class SimpleQwenProcessor:
                 response = self.generate_response(prompt, instance_id)
                 results.append(response)
             return results
-       
+
         else:
             with ThreadPoolExecutor(max_workers=self.num_instances) as executor:
                 # Submit all tasks
@@ -138,9 +147,11 @@ class SimpleQwenProcessor:
                     executor.submit(process_single, (i, prompt)): i
                     for i, prompt in enumerate(prompts)
                 }
-               
+
                 # Collect results with timeout
-                for future in as_completed(future_to_idx, timeout=300):  # 5 minute timeout
+                for future in as_completed(
+                    future_to_idx, timeout=300
+                ):  # 5 minute timeout
                     try:
                         idx, response = future.result(timeout=60)  # 1 minute per task
                         results[idx] = response
@@ -148,9 +159,9 @@ class SimpleQwenProcessor:
                         idx = future_to_idx[future]
                         logger.error(f"Task {idx} failed: {str(e)}")
                         results[idx] = f"Error: {str(e)}"
-       
+
         return results
-   
+
     def cleanup(self):
         """Cleanup models and free GPU memory"""
         logger.info("Cleaning up models...")
@@ -159,7 +170,9 @@ class SimpleQwenProcessor:
         torch.cuda.empty_cache()
         gc.collect()
 
+
 from vllm import LLM, SamplingParams
+
 
 class VLLMProcessor:
     def __init__(self):
@@ -173,21 +186,21 @@ class VLLMProcessor:
                 enable_chunked_prefill=True,
                 max_num_batched_tokens=8192,
                 enforce_eager=True,
-                trust_remote_code=True
+                trust_remote_code=True,
             )
-           
+
             self.sampling_params = SamplingParams(
                 temperature=0.3,
                 top_p=0.8,
                 top_k=50,
                 max_tokens=2048,
-                repetition_penalty=1.05
+                repetition_penalty=1.05,
             )
             logger.info("vLLM processor initialized successfully")
         except Exception as e:
             logger.error(f"vLLM initialization failed: {e}")
             raise
-   
+
     def process_batch_vllm(self, prompts: List[str]) -> List[str]:
         """Process entire batch at once with vLLM"""
         try:
@@ -196,90 +209,91 @@ class VLLMProcessor:
         except Exception as e:
             logger.error(f"vLLM batch processing failed: {e}")
             return [f"Error: {str(e)}" for _ in prompts]
-   
+
     def cleanup(self):
         """Cleanup vLLM resources"""
-        if hasattr(self, 'llm'):
+        if hasattr(self, "llm"):
             del self.llm
         torch.cuda.empty_cache()
         gc.collect()
-   
+
+
 class FixedFinancialReportGenerator:
     def __init__(self, input_folder: str, output_folder: str):
         """Initialize the fixed report generator"""
         self.input_folder = Path(input_folder)
         self.output_folder = Path(output_folder)
         self.output_folder.mkdir(exist_ok=True)
-       
+
         # Create subdirectories
         self.chunks_folder = self.output_folder / "chunks"
         self.charts_folder = self.output_folder / "charts"
         self.html_assets_folder = self.output_folder / "assets"
-       
+
         for folder in [self.chunks_folder, self.charts_folder, self.html_assets_folder]:
             folder.mkdir(exist_ok=True)
-       
+
         # Initialize tokenizer for chunking
         self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-14B-Instruct")
-       
+
         # Initialize simplified model processor
         # self.model_processor = SimpleQwenProcessor()
         self.vllm_processor = VLLMProcessor()
         # Data storage
         self.all_inferences = []
         self.financial_data = defaultdict(list)
-       
+
         logger.info("Fixed Financial Report Generator initialized")
-   
+
     def read_markdown_file(self, filepath: Path) -> str:
         """Read markdown file content"""
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             return f.read()
-   
+
     def split_by_headers(self, content: str, filename: str) -> List[Dict]:
         """Split markdown content by headers and create chunks"""
-        header_pattern = r'^(#{1,4})\s+(.+)$'
-       
+        header_pattern = r"^(#{1,4})\s+(.+)$"
+
         chunks = []
-        lines = content.split('\n')
+        lines = content.split("\n")
         current_chunk = {
-            'header': 'Document Start',
-            'level': 0,
-            'content': [],
-            'source': filename
+            "header": "Document Start",
+            "level": 0,
+            "content": [],
+            "source": filename,
         }
-       
+
         for line in lines:
             match = re.match(header_pattern, line, re.MULTILINE)
             if match:
                 # Save previous chunk if it has content
-                if current_chunk['content']:
-                    current_chunk['content'] = '\n'.join(current_chunk['content'])
+                if current_chunk["content"]:
+                    current_chunk["content"] = "\n".join(current_chunk["content"])
                     chunks.append(current_chunk)
-               
+
                 # Start new chunk
                 level = len(match.group(1))
                 header = match.group(2)
                 current_chunk = {
-                    'header': header,
-                    'level': level,
-                    'content': [line],
-                    'source': filename
+                    "header": header,
+                    "level": level,
+                    "content": [line],
+                    "source": filename,
                 }
             else:
-                current_chunk['content'].append(line)
-       
+                current_chunk["content"].append(line)
+
         # Don't forget the last chunk
-        if current_chunk['content']:
-            current_chunk['content'] = '\n'.join(current_chunk['content'])
+        if current_chunk["content"]:
+            current_chunk["content"] = "\n".join(current_chunk["content"])
             chunks.append(current_chunk)
-       
+
         return chunks
-   
+
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
         return len(self.tokenizer.encode(text))
-   
+
     def create_financial_prompt(self, chunk: Dict, chunk_index: int) -> str:
         """Create optimized prompt for financial analysis"""
         prompt = f"""<|im_start|>system
@@ -321,19 +335,23 @@ Respond only with the JSON, no additional text.<|im_end|>
 
 <|im_start|>assistant"""
         return prompt
-   
-    def parse_response_to_dict(self, response: str, chunk: Dict, chunk_index: int) -> Dict:
+
+    def parse_response_to_dict(
+        self, response: str, chunk: Dict, chunk_index: int
+    ) -> Dict:
         """Parse model response to structured dictionary"""
         try:
             # Try to find JSON in the response
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
             if json_match:
                 json_str = json_match.group()
                 result = json.loads(json_str)
             else:
                 # Fallback parsing
                 result = {
-                    "summary": response[:500] + "..." if len(response) > 500 else response,
+                    "summary": (
+                        response[:500] + "..." if len(response) > 500 else response
+                    ),
                     "financial_data": {},
                     "key_dates": [],
                     "insights": [],
@@ -342,7 +360,7 @@ Respond only with the JSON, no additional text.<|im_end|>
                     "strategic_implications": [],
                     "quantitative_data": {},
                     "compliance_notes": [],
-                    "risk_assessment": {}
+                    "risk_assessment": {},
                 }
         except json.JSONDecodeError:
             # If JSON parsing fails, create structured response from text
@@ -356,58 +374,60 @@ Respond only with the JSON, no additional text.<|im_end|>
                 "strategic_implications": [],
                 "quantitative_data": {},
                 "compliance_notes": [],
-                "risk_assessment": {}
+                "risk_assessment": {},
             }
-       
+
         # Add metadata
-        result['source_document'] = chunk['source']
-        result['section_header'] = chunk['header']
-        result['chunk_index'] = chunk_index
-        result['timestamp'] = datetime.now().isoformat()
-       
+        result["source_document"] = chunk["source"]
+        result["section_header"] = chunk["header"]
+        result["chunk_index"] = chunk_index
+        result["timestamp"] = datetime.now().isoformat()
+
         return result
-   
+
     def process_all_documents_fixed(self):
         """Process all documents with fixed parallel processing"""
         output_md = self.output_folder / "aggregated_analysis.md"
-       
+
         # Initialize the output file
-        with open(output_md, 'w', encoding='utf-8') as f:
+        with open(output_md, "w", encoding="utf-8") as f:
             f.write("# Comprehensive Financial Documents Analysis Report\n")
             f.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-       
+
         # Collect all chunks from all documents
         all_chunks = []
         md_files = list(self.input_folder.glob("*.md"))
-       
+
         logger.info(f"Found {len(md_files)} documents to process")
-       
+
         for md_file in md_files:
             logger.info(f"Reading document: {md_file.name}")
             content = self.read_markdown_file(md_file)
             chunks = self.split_by_headers(content, md_file.name)
             all_chunks.extend(chunks)
-       
+
         logger.info(f"Total chunks to process: {len(all_chunks)}")
-       
+
         # Process chunks in smaller batches to avoid hanging
         batch_size = 12  # Smaller batch size (2 per model instance)
         total_batches = (len(all_chunks) + batch_size - 1) // batch_size
-       
+
         for batch_num in range(total_batches):
             start_idx = batch_num * batch_size
             end_idx = min(start_idx + batch_size, len(all_chunks))
             batch_chunks = all_chunks[start_idx:end_idx]
-           
-            logger.info(f"Processing batch {batch_num + 1}/{total_batches} ({len(batch_chunks)} chunks)")
-           
+
+            logger.info(
+                f"Processing batch {batch_num + 1}/{total_batches} ({len(batch_chunks)} chunks)"
+            )
+
             # Create prompts for this batch
             prompts = []
             for i, chunk in enumerate(batch_chunks):
                 chunk_index = start_idx + i
                 prompt = self.create_financial_prompt(chunk, chunk_index)
                 prompts.append(prompt)
-           
+
             # Process batch with timeout and error handling
             try:
                 start_time = time.time()
@@ -415,218 +435,273 @@ Respond only with the JSON, no additional text.<|im_end|>
                 responses = self.vllm_processor.process_batch_vllm(prompts)
 
                 batch_time = time.time() - start_time
-                logger.info(f"Batch {batch_num + 1} completed in {batch_time:.2f} seconds")
-               
+                logger.info(
+                    f"Batch {batch_num + 1} completed in {batch_time:.2f} seconds"
+                )
+
                 # Process responses
                 for i, (chunk, response) in enumerate(zip(batch_chunks, responses)):
                     chunk_index = start_idx + i
-                   
+
                     if response and not response.startswith("Error"):
-                        result = self.parse_response_to_dict(response, chunk, chunk_index)
+                        result = self.parse_response_to_dict(
+                            response, chunk, chunk_index
+                        )
                         self.all_inferences.append(result)
                         self.save_inference_to_md(result, output_md)
-                       
+
                         # Collect financial data
-                        for metric, value in result.get('financial_data', {}).items():
-                            self.financial_data[metric].append({
-                                'value': value,
-                                'source': result['source_document'],
-                                'section': result['section_header']
-                            })
-                       
+                        for metric, value in result.get("financial_data", {}).items():
+                            self.financial_data[metric].append(
+                                {
+                                    "value": value,
+                                    "source": result["source_document"],
+                                    "section": result["section_header"],
+                                }
+                            )
+
                         # Also collect quantitative data
-                        for metric, value in result.get('quantitative_data', {}).items():
-                            self.financial_data[f"quant_{metric}"].append({
-                                'value': value,
-                                'source': result['source_document'],
-                                'section': result['section_header']
-                            })
+                        for metric, value in result.get(
+                            "quantitative_data", {}
+                        ).items():
+                            self.financial_data[f"quant_{metric}"].append(
+                                {
+                                    "value": value,
+                                    "source": result["source_document"],
+                                    "section": result["section_header"],
+                                }
+                            )
                     else:
-                        logger.warning(f"Failed to process chunk {chunk_index}: {response}")
-               
+                        logger.warning(
+                            f"Failed to process chunk {chunk_index}: {response}"
+                        )
+
                 logger.info(f"Completed batch {batch_num + 1}/{total_batches}")
-               
+
                 # Brief pause between batches
                 time.sleep(2)
-               
+
             except Exception as e:
                 logger.error(f"Error processing batch {batch_num + 1}: {str(e)}")
                 continue
-       
-        logger.info(f"Processed {len(self.all_inferences)} chunks from {len(md_files)} documents")
+
+        logger.info(
+            f"Processed {len(self.all_inferences)} chunks from {len(md_files)} documents"
+        )
         return output_md
-   
+
     def save_inference_to_md(self, inference: Dict, output_file: Path):
         """Append inference to markdown file"""
-        with open(output_file, 'a', encoding='utf-8') as f:
-            f.write(f"\n\n## Source: {inference['source_document']} - {inference['section_header']}\n")
+        with open(output_file, "a", encoding="utf-8") as f:
+            f.write(
+                f"\n\n## Source: {inference['source_document']} - {inference['section_header']}\n"
+            )
             f.write(f"*Processed at: {inference['timestamp']}*\n\n")
-           
+
             f.write("### Summary\n")
             f.write(f"{inference['summary']}\n\n")
-           
-            if inference.get('financial_data'):
+
+            if inference.get("financial_data"):
                 f.write("### Financial Data\n")
-                for metric, value in inference['financial_data'].items():
+                for metric, value in inference["financial_data"].items():
                     f.write(f"- **{metric}**: {value}\n")
                 f.write("\n")
-           
-            if inference.get('quantitative_data'):
+
+            if inference.get("quantitative_data"):
                 f.write("### Quantitative Data\n")
-                for metric, value in inference['quantitative_data'].items():
+                for metric, value in inference["quantitative_data"].items():
                     f.write(f"- **{metric}**: {value}\n")
                 f.write("\n")
-           
-            for section_name in ['key_dates', 'insights', 'strategic_implications', 'recommendations', 'concerns', 'compliance_notes']:
+
+            for section_name in [
+                "key_dates",
+                "insights",
+                "strategic_implications",
+                "recommendations",
+                "concerns",
+                "compliance_notes",
+            ]:
                 if inference.get(section_name):
                     f.write(f"### {section_name.replace('_', ' ').title()}\n")
                     for item in inference[section_name]:
                         f.write(f"- {item}\n")
                     f.write("\n")
-           
-            if inference.get('risk_assessment'):
+
+            if inference.get("risk_assessment"):
                 f.write("### Risk Assessment\n")
-                for risk_type, assessment in inference['risk_assessment'].items():
+                for risk_type, assessment in inference["risk_assessment"].items():
                     f.write(f"- **{risk_type}**: {assessment}\n")
                 f.write("\n")
-           
+
             f.write("---\n")
-   
+
     def create_visualizations(self):
         """Create comprehensive charts and graphs"""
         logger.info("Creating visualizations...")
         charts_created = []
-       
+
         try:
             # 1. Financial Metrics Overview
             if self.financial_data:
-                metric_counts = {metric: len(values) for metric, values in self.financial_data.items()}
-                top_metrics = sorted(metric_counts.items(), key=lambda x: x[1], reverse=True)[:20]
-               
+                metric_counts = {
+                    metric: len(values)
+                    for metric, values in self.financial_data.items()
+                }
+                top_metrics = sorted(
+                    metric_counts.items(), key=lambda x: x[1], reverse=True
+                )[:20]
+
                 if top_metrics:
                     fig = go.Figure()
                     metrics = [m[0] for m in top_metrics]
                     counts = [m[1] for m in top_metrics]
-                   
-                    fig.add_trace(go.Bar(
-                        x=metrics,
-                        y=counts,
-                        marker_color='steelblue',
-                        text=counts,
-                        textposition='auto',
-                    ))
-                   
+
+                    fig.add_trace(
+                        go.Bar(
+                            x=metrics,
+                            y=counts,
+                            marker_color="steelblue",
+                            text=counts,
+                            textposition="auto",
+                        )
+                    )
+
                     fig.update_layout(
                         title="Top 20 Financial Metrics by Frequency",
                         xaxis_title="Metrics",
                         yaxis_title="Frequency",
                         template="plotly_white",
                         height=600,
-                        xaxis_tickangle=-45
+                        xaxis_tickangle=-45,
                     )
-                   
+
                     chart_path = self.charts_folder / "top_financial_metrics.html"
                     fig.write_html(str(chart_path))
                     charts_created.append(chart_path)
-           
+
             # 2. Document Analysis Distribution
-            doc_counts = Counter(inf['source_document'] for inf in self.all_inferences)
-           
+            doc_counts = Counter(inf["source_document"] for inf in self.all_inferences)
+
             if doc_counts:
-                fig = go.Figure(data=[
-                    go.Pie(
-                        labels=list(doc_counts.keys()),
-                        values=list(doc_counts.values()),
-                        hole=0.4,
-                        textinfo='label+percent'
-                    )
-                ])
-               
+                fig = go.Figure(
+                    data=[
+                        go.Pie(
+                            labels=list(doc_counts.keys()),
+                            values=list(doc_counts.values()),
+                            hole=0.4,
+                            textinfo="label+percent",
+                        )
+                    ]
+                )
+
                 fig.update_layout(
                     title="Document Analysis Distribution",
                     template="plotly_white",
-                    height=600
+                    height=600,
                 )
-               
+
                 chart_path = self.charts_folder / "document_distribution.html"
                 fig.write_html(str(chart_path))
                 charts_created.append(chart_path)
-           
+
             # 3. Analysis Summary
-            insights_count = sum(len(inf.get('insights', [])) for inf in self.all_inferences)
-            concerns_count = sum(len(inf.get('concerns', [])) for inf in self.all_inferences)
-            recommendations_count = sum(len(inf.get('recommendations', [])) for inf in self.all_inferences)
-            strategic_impl_count = sum(len(inf.get('strategic_implications', [])) for inf in self.all_inferences)
-           
-            categories = ['Insights', 'Concerns', 'Recommendations', 'Strategic Implications']
-            values = [insights_count, concerns_count, recommendations_count, strategic_impl_count]
-            colors = ['#2E86AB', '#F18F01', '#A23B72', '#6A994E']
-           
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=categories,
-                    y=values,
-                    marker_color=colors,
-                    text=values,
-                    textposition='auto'
-                )
-            ])
-           
+            insights_count = sum(
+                len(inf.get("insights", [])) for inf in self.all_inferences
+            )
+            concerns_count = sum(
+                len(inf.get("concerns", [])) for inf in self.all_inferences
+            )
+            recommendations_count = sum(
+                len(inf.get("recommendations", [])) for inf in self.all_inferences
+            )
+            strategic_impl_count = sum(
+                len(inf.get("strategic_implications", []))
+                for inf in self.all_inferences
+            )
+
+            categories = [
+                "Insights",
+                "Concerns",
+                "Recommendations",
+                "Strategic Implications",
+            ]
+            values = [
+                insights_count,
+                concerns_count,
+                recommendations_count,
+                strategic_impl_count,
+            ]
+            colors = ["#2E86AB", "#F18F01", "#A23B72", "#6A994E"]
+
+            fig = go.Figure(
+                data=[
+                    go.Bar(
+                        x=categories,
+                        y=values,
+                        marker_color=colors,
+                        text=values,
+                        textposition="auto",
+                    )
+                ]
+            )
+
             fig.update_layout(
                 title="Analysis Summary by Category",
                 xaxis_title="Category",
                 yaxis_title="Count",
                 template="plotly_white",
-                height=500
+                height=500,
             )
-           
+
             chart_path = self.charts_folder / "analysis_summary.html"
             fig.write_html(str(chart_path))
             charts_created.append(chart_path)
-           
+
             logger.info(f"Created {len(charts_created)} visualizations")
-           
+
         except Exception as e:
             logger.error(f"Error creating visualizations: {str(e)}")
-       
+
         return charts_created
-   
-    def chunk_aggregated_content(self, md_file_path: Path, max_tokens: int = 6000) -> List[str]:
+
+    def chunk_aggregated_content(
+        self, md_file_path: Path, max_tokens: int = 6000
+    ) -> List[str]:
         """Chunk the aggregated markdown content for final processing"""
-        with open(md_file_path, 'r', encoding='utf-8') as f:
+        with open(md_file_path, "r", encoding="utf-8") as f:
             content = f.read()
-       
+
         # Split by document sections
-        sections = re.split(r'^## Source:', content, flags=re.MULTILINE)[1:]
-       
+        sections = re.split(r"^## Source:", content, flags=re.MULTILINE)[1:]
+
         chunks = []
         current_chunk = []
         current_tokens = 0
-       
+
         for section in sections:
             section_tokens = self.count_tokens(section)
-           
+
             if current_tokens + section_tokens > max_tokens and current_chunk:
-                chunks.append('## Source:' + '\n## Source:'.join(current_chunk))
+                chunks.append("## Source:" + "\n## Source:".join(current_chunk))
                 current_chunk = [section]
                 current_tokens = section_tokens
             else:
                 current_chunk.append(section)
                 current_tokens += section_tokens
-       
+
         if current_chunk:
-            chunks.append('## Source:' + '\n## Source:'.join(current_chunk))
-       
+            chunks.append("## Source:" + "\n## Source:".join(current_chunk))
+
         logger.info(f"Created {len(chunks)} chunks for final processing")
         return chunks
-   
+
     def generate_executive_summary(self, chunks: List[str]) -> str:
         """Generate executive summary from chunked content"""
         logger.info("Generating executive summary...")
-       
+
         # Use only first few chunks for summary to avoid overwhelming the model
         summary_chunks = chunks[:5]
-       
+
         prompts = []
         for i, chunk in enumerate(summary_chunks):
             prompt = f"""<|im_start|>system
@@ -648,14 +723,14 @@ Provide a structured executive summary that is concise yet comprehensive.<|im_en
 
 <|im_start|>assistant"""
             prompts.append(prompt)
-       
+
         try:
             # Process summary chunks
             # responses = self.model_processor.process_batch_parallel(prompts)
-            responses = self.vllm_processor.process_batch_vllm(prompts)            
+            responses = self.vllm_processor.process_batch_vllm(prompts)
             # Combine valid responses
             valid_summaries = [r for r in responses if r and not r.startswith("Error")]
-           
+
             if valid_summaries:
                 # Create final combined summary
                 combined_prompt = f"""<|im_start|>system
@@ -678,31 +753,33 @@ Summaries to synthesize:
 Create a professional, actionable executive summary.<|im_end|>
 
 <|im_start|>assistant"""
-               
-                final_summary = self.vllm_processor.process_batch_vllm([combined_prompt])[0]
+
+                final_summary = self.vllm_processor.process_batch_vllm(
+                    [combined_prompt]
+                )[0]
                 return final_summary
-           
+
         except Exception as e:
             logger.error(f"Error generating executive summary: {str(e)}")
-       
+
         return "Executive summary could not be generated due to processing errors."
-   
+
     def generate_insights_analysis(self) -> str:
         """Generate detailed insights analysis"""
         logger.info("Generating insights analysis...")
-       
+
         # Collect all insights
         all_insights = []
         all_strategic_implications = []
-       
+
         for inf in self.all_inferences:
-            all_insights.extend(inf.get('insights', []))
-            all_strategic_implications.extend(inf.get('strategic_implications', []))
-       
+            all_insights.extend(inf.get("insights", []))
+            all_strategic_implications.extend(inf.get("strategic_implications", []))
+
         # Remove duplicates and get top insights
         unique_insights = list(set(all_insights))[:50]
         unique_implications = list(set(all_strategic_implications))[:50]
-       
+
         prompt = f"""<|im_start|>system
 You are a senior strategic analyst creating a comprehensive insights report for executive leadership.<|im_end|>
 
@@ -726,7 +803,7 @@ Create a structured analysis with:
 Format as a comprehensive business intelligence report.<|im_end|>
 
 <|im_start|>assistant"""
-       
+
         try:
             # insights_analysis = self.model_processor.generate_response(prompt)
             insights_analysis = self.vllm_processor.process_batch_vllm([prompt])[0]
@@ -734,25 +811,25 @@ Format as a comprehensive business intelligence report.<|im_end|>
         except Exception as e:
             logger.error(f"Error generating insights analysis: {str(e)}")
             return "Insights analysis could not be generated."
-   
+
     def generate_risk_assessment(self) -> str:
         """Generate comprehensive risk assessment"""
         logger.info("Generating risk assessment...")
-       
+
         # Collect all risks and concerns
         all_concerns = []
         all_risk_assessments = {}
-       
+
         for inf in self.all_inferences:
-            all_concerns.extend(inf.get('concerns', []))
-            risk_assessment = inf.get('risk_assessment', {})
+            all_concerns.extend(inf.get("concerns", []))
+            risk_assessment = inf.get("risk_assessment", {})
             for risk_type, assessment in risk_assessment.items():
                 if risk_type not in all_risk_assessments:
                     all_risk_assessments[risk_type] = []
                 all_risk_assessments[risk_type].append(assessment)
-       
+
         unique_concerns = list(set(all_concerns))[:50]
-       
+
         prompt = f"""<|im_start|>system
 You are a Chief Risk Officer preparing a comprehensive risk assessment report for the board of directors.<|im_end|>
 
@@ -776,7 +853,7 @@ Create a structured risk assessment with:
 Format as a professional risk management report.<|im_end|>
 
 <|im_start|>assistant"""
-       
+
         try:
             # risk_assessment = self.model_processor.generate_response(prompt)
             risk_assessment = self.vllm_processor.process_batch_vllm([prompt])[0]
@@ -784,74 +861,76 @@ Format as a professional risk management report.<|im_end|>
         except Exception as e:
             logger.error(f"Error generating risk assessment: {str(e)}")
             return "Risk assessment could not be generated."
-   
+
     def create_html_report(self, md_file_path: Path, charts: List[Path]):
         """Create comprehensive HTML report"""
         logger.info("Creating HTML report...")
-       
+
         # Chunk the aggregated content
         chunks = self.chunk_aggregated_content(md_file_path)
-       
+
         # Generate comprehensive sections
         exec_summary = self.generate_executive_summary(chunks)
         insights_analysis = self.generate_insights_analysis()
         risk_assessment = self.generate_risk_assessment()
-       
+
         # Collect data for display
-        doc_counts = Counter(inf['source_document'] for inf in self.all_inferences)
-       
+        doc_counts = Counter(inf["source_document"] for inf in self.all_inferences)
+
         # Financial metrics summary
         financial_metrics_summary = []
         for metric, values in list(self.financial_data.items())[:50]:
             if values:
                 latest = values[-1]
-                financial_metrics_summary.append({
-                    'metric': metric,
-                    'value': latest['value'],
-                    'source': latest['source'],
-                    'section': latest['section']
-                })
-       
+                financial_metrics_summary.append(
+                    {
+                        "metric": metric,
+                        "value": latest["value"],
+                        "source": latest["source"],
+                        "section": latest["section"],
+                    }
+                )
+
         def format_content_for_html(content: str) -> str:
             """Format content for HTML display"""
             if not content:
                 return "<p>Content not available.</p>"
-           
+
             # Split content into paragraphs and format
-            paragraphs = content.split('\n\n')
+            paragraphs = content.split("\n\n")
             formatted_content = ""
-           
+
             for para in paragraphs:
                 para = para.strip()
                 if not para:
                     continue
-                   
+
                 # Check if it's a heading (starts with #)
-                if para.startswith('##'):
-                    heading = para.replace('##', '').strip()
+                if para.startswith("##"):
+                    heading = para.replace("##", "").strip()
                     formatted_content += f"<h3>{heading}</h3>\n"
-                elif para.startswith('#'):
-                    heading = para.replace('#', '').strip()
+                elif para.startswith("#"):
+                    heading = para.replace("#", "").strip()
                     formatted_content += f"<h2>{heading}</h2>\n"
                 # Check if it's a list item
-                elif para.startswith('- ') or para.startswith('* '):
-                    items = para.split('\n')
+                elif para.startswith("- ") or para.startswith("* "):
+                    items = para.split("\n")
                     formatted_content += "<ul>\n"
                     for item in items:
-                        if item.strip().startswith(('- ', '* ')):
+                        if item.strip().startswith(("- ", "* ")):
                             item_text = item.strip()[2:]
                             formatted_content += f"<li>{item_text}</li>\n"
                     formatted_content += "</ol>\n"
                 # Regular paragraph
                 else:
                     # Bold text formatting
-                    para = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', para)
+                    para = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", para)
                     # Italic text formatting
-                    para = re.sub(r'\*(.*?)\*', r'<em>\1</em>', para)
+                    para = re.sub(r"\*(.*?)\*", r"<em>\1</em>", para)
                     formatted_content += f"<p>{para}</p>\n"
-           
+
             return formatted_content
-       
+
         # Create HTML content
         html_content = f"""
 <!DOCTYPE html>
@@ -1560,40 +1639,47 @@ Format as a professional risk management report.<|im_end|>
 </html>"""
 
         # Save HTML file
-        html_path = self.output_folder / f"Financial_Analysis_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-       
-        with open(html_path, 'w', encoding='utf-8') as f:
+        html_path = (
+            self.output_folder
+            / f"Financial_Analysis_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        )
+
+        with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-       
+
         logger.info(f"HTML report created: {html_path}")
         return html_path
-   
+
     def generate_report(self):
         """Main method to generate the complete report"""
         logger.info("=" * 60)
         logger.info("STARTING FIXED FINANCIAL REPORT GENERATION")
         logger.info("=" * 60)
-       
+
         try:
             # Check if aggregated MD file already exists
             aggregated_md = self.output_folder / "aggregated_analysis.md"
-           
+
             if aggregated_md.exists():
-                logger.info("Found existing aggregated_analysis.md file - skipping document processing")
+                logger.info(
+                    "Found existing aggregated_analysis.md file - skipping document processing"
+                )
                 logger.info("Proceeding directly to HTML report generation...")
             else:
                 # Step 1: Process all documents with fixed parallel processing
-                logger.info("Step 1: Processing documents with fixed parallel processing...")
+                logger.info(
+                    "Step 1: Processing documents with fixed parallel processing..."
+                )
                 aggregated_md = self.process_all_documents_fixed()
-           
+
             # Step 2: Create comprehensive visualizations
             logger.info("Step 2: Creating comprehensive visualizations...")
             charts = self.create_visualizations()
-           
+
             # Step 3: Generate HTML report
             logger.info("Step 3: Generating comprehensive HTML report...")
             report_path = self.create_html_report(aggregated_md, charts)
-           
+
             logger.info("=" * 60)
             logger.info("REPORT GENERATION COMPLETED SUCCESSFULLY!")
             logger.info("=" * 60)
@@ -1601,20 +1687,20 @@ Format as a professional risk management report.<|im_end|>
             logger.info(f"HTML report: {report_path}")
             logger.info(f"Aggregated analysis: {aggregated_md}")
             logger.info(f"Charts created: {len(charts)}")
-           
+
             return report_path
-           
+
         except Exception as e:
             logger.error(f"Error during report generation: {str(e)}")
             raise
         finally:
             # Cleanup
-            if hasattr(self, 'vllm_processor'):
+            if hasattr(self, "vllm_processor"):
                 self.vllm_processor.cleanup()
-   
+
     def __del__(self):
         """Cleanup when object is destroyed"""
-        if hasattr(self, 'vllm_processor'):
+        if hasattr(self, "vllm_processor"):
             self.vllm_processor.cleanup()
 
 
@@ -1623,34 +1709,37 @@ def main():
     # Configuration
     INPUT_FOLDER = "pdf_report_generator/md_files"  # Folder containing markdown files
     OUTPUT_FOLDER = "pdf_report_generator/parallel_report"  # Output folder
-   
+
     # Validate input folder
     if not Path(INPUT_FOLDER).exists():
         logger.error(f"Input folder not found: {INPUT_FOLDER}")
         return
-   
+
     # Check if there are any markdown files
     md_files = list(Path(INPUT_FOLDER).glob("*.md"))
     if not md_files:
         logger.error(f"No markdown files found in {INPUT_FOLDER}")
         return
-   
+
     logger.info(f"Found {len(md_files)} markdown files to process")
-   
+
     try:
         # Create report generator
         generator = FixedFinancialReportGenerator(INPUT_FOLDER, OUTPUT_FOLDER)
-       
+
         # Generate report
         report_path = generator.generate_report()
-       
+
         logger.info(f"\n🎉 SUCCESS! Your comprehensive financial report is ready!")
         logger.info(f"📁 Report location: {report_path}")
-        logger.info(f"🌐 Open the HTML file in your browser to view the interactive report")
-       
+        logger.info(
+            f"🌐 Open the HTML file in your browser to view the interactive report"
+        )
+
     except Exception as e:
         logger.error(f"❌ Error generating report: {str(e)}")
         import traceback
+
         traceback.print_exc()
 
 

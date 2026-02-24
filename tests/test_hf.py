@@ -1,5 +1,6 @@
 import os
 import time
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # Use a pipeline as a high-level helper
 from transformers import pipeline

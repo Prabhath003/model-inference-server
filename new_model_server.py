@@ -1,5 +1,4 @@
-
-from modules.model_server_old import ModelServer
+from modules import ModelServer
 
 modelserver = ModelServer()
 

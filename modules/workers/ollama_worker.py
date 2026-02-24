@@ -12,6 +12,7 @@ load_dotenv()
 
 PORTS = [int(port) for port in os.environ.get("OLLAMA_PORTS", "").split(" ")]
 
+
 def call_ollama(payload: Dict[str, Any], port: int):
     if port in [6001, 6002]:
         url = f"http://localhost:{port}/api/chat"
@@ -21,16 +22,17 @@ def call_ollama(payload: Dict[str, Any], port: int):
     response.raise_for_status()
     return response.json()["message"]["content"]
 
+
 class OllamaWorker(Worker):
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-        
+
         self.configure(**kwargs)
-        
+
     def configure(self, **kwargs: Any):
         for key, value in kwargs.items():
             setattr(self, key, value)
-    
+
     def start_processor(self, **kwargs: Any) -> None:
         processes: List[Process] = []
         for port in PORTS:
@@ -40,7 +42,7 @@ class OllamaWorker(Worker):
 
         for process in processes:
             process.join()
-        
+
     def worker(self, **kwargs: Any):
         port: int = kwargs.get("port", "")
         if not port:

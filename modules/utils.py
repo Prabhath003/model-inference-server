@@ -22,16 +22,16 @@ logger.setLevel(logging.DEBUG)
 # Create a file handler per module
 os.makedirs("logs", exist_ok=True)
 log_file = f"logs/{module_name}.log"
-file_handler = RotatingFileHandler(log_file, maxBytes=100*1024*1024, backupCount=5)
+file_handler = RotatingFileHandler(log_file, maxBytes=100 * 1024 * 1024, backupCount=5)
 
 # Create and set formatter
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 file_handler.setFormatter(formatter)
 
 # Add handler if not already added
 if not logger.hasHandlers():
     logger.addHandler(file_handler)
-    
+
 logger.debug(f"Logger initialized for {module_name}")
 
 # def get_model_size(model_name: str) -> float:
@@ -44,7 +44,7 @@ logger.debug(f"Logger initialized for {module_name}")
 #     Returns:
 #         float: The size of the model in GB, or None if an error occurs.
 #     """
-#     try:            
+#     try:
 #         repo_files = list_repo_files(model_name)
 #         safetensors_files = [file for file in repo_files if file.endswith('.safetensors')]
 
@@ -61,6 +61,7 @@ logger.debug(f"Logger initialized for {module_name}")
 #         logger.error(f"Error fetching model size: {e}")
 #         return None
 
+
 def get_model_size(model_name: str) -> float:
     """
     Fetch the model size (in GB) from the Hugging Face safetensors index.
@@ -72,10 +73,13 @@ def get_model_size(model_name: str) -> float:
     Returns:
         float: The total size of the model in GB, or None if an error occurs.
     """
+
     def get_size(model: str) -> float:
         try:
             repo_files = list_repo_files(model)
-            safetensors_files = [file for file in repo_files if file.endswith('.safetensors')]
+            safetensors_files = [
+                file for file in repo_files if file.endswith(".safetensors")
+            ]
 
             total_size_bytes = 0
             for file in safetensors_files:
@@ -97,7 +101,9 @@ def get_model_size(model_name: str) -> float:
                 file_path = hf_hub_download(model_name, config_file)
                 with open(file_path, "r") as f:
                     config = json.load(f)
-                base_model = config.get("base_model_name_or_path") or config.get("base_model")
+                base_model = config.get("base_model_name_or_path") or config.get(
+                    "base_model"
+                )
                 if base_model:
                     logger.info(f"Adapter model detected. Base model: {base_model}")
                     total_size_gb += get_size(base_model)
@@ -112,7 +118,13 @@ def get_model_size(model_name: str) -> float:
         logger.error(f"Error fetching model size: {e}")
         return None
 
-def estimate_memory(model_name: str, dtype: Literal["fp32", "fp16", "int8"]="fp16", batch_size: int=8, seq_length: int=8192) -> Tuple[float, float, float]:
+
+def estimate_memory(
+    model_name: str,
+    dtype: Literal["fp32", "fp16", "int8"] = "fp16",
+    batch_size: int = 8,
+    seq_length: int = 8192,
+) -> Tuple[float, float, float]:
     """
     Estimate total memory required for model inference.
     - Uses precomputed model size (weights).
@@ -128,12 +140,14 @@ def estimate_memory(model_name: str, dtype: Literal["fp32", "fp16", "int8"]="fp1
         Tuple[float, float, float]: The model size in GB, activation memory in GB, and total memory in GB.
     """
     model_size_gb = get_model_size(model_name)
-    
+
     if model_size_gb is None:
         logger.warning("Could not retrieve model size, using fallback method.")
         try:
             config = AutoConfig.from_pretrained(model_name)
-            num_params = getattr(config, "num_parameters", lambda: 0)()  # Safely get num_parameters
+            num_params = getattr(
+                config, "num_parameters", lambda: 0
+            )()  # Safely get num_parameters
             dtype_size = {"fp32": 4, "fp16": 2, "int8": 1}.get(dtype, 2)
             model_size_gb = (num_params * dtype_size) / 1e9  # Convert bytes to GB
         except Exception as e:
@@ -142,11 +156,14 @@ def estimate_memory(model_name: str, dtype: Literal["fp32", "fp16", "int8"]="fp1
 
     dtype_offset = {"fp32": 4, "fp16": 2, "int8": 1}.get(dtype, 2)
     activation_memory: float = model_size_gb * 0.5 * dtype_offset
-    
-    total_memory: float = model_size_gb * (1 + 9.92)
+
+    total_memory: float = model_size_gb * 1.2
     # total_memory: float = model_size_gb + 1
-    logger.info(f"Estimated memory for {model_name} with dtype {dtype}: model_size_gb={model_size_gb}, activation_memory={activation_memory}, total_memory={total_memory}")
+    logger.info(
+        f"Estimated memory for {model_name} with dtype {dtype}: model_size_gb={model_size_gb}, activation_memory={activation_memory}, total_memory={total_memory}"
+    )
     return model_size_gb, activation_memory, total_memory
+
 
 def get_available_gpus() -> List[Tuple[int, float]]:
     """
@@ -160,7 +177,9 @@ def get_available_gpus() -> List[Tuple[int, float]]:
         gpu_info: List[Tuple[int, float]] = []
         for i in range(torch.cuda.device_count()):
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            free_mem: float = pynvml.nvmlDeviceGetMemoryInfo(handle).free / 1e9  # Convert to GB
+            free_mem: float = (
+                pynvml.nvmlDeviceGetMemoryInfo(handle).free / 1e9
+            )  # Convert to GB
             gpu_info.append((i, free_mem))
         pynvml.nvmlShutdown()
         logger.info(f"Available GPUs: {gpu_info}")
@@ -168,6 +187,7 @@ def get_available_gpus() -> List[Tuple[int, float]]:
     except pynvml.NVMLError as e:
         logger.error(f"Error initializing NVML: {e}")
         return []
+
 
 def select_optimal_gpus(required_memory: float) -> List[int]:
     """
@@ -185,13 +205,13 @@ def select_optimal_gpus(required_memory: float) -> List[int]:
 
     possible_gpus: List[Tuple[int, float]] = []
     possible_gpus.extend(
-        (gpu, free_mem)
-        for gpu, free_mem in gpus
-        if free_mem >= required_memory
+        (gpu, free_mem) for gpu, free_mem in gpus if free_mem >= required_memory
     )
     if possible_gpus:
         possible_gpus = sorted(possible_gpus, key=lambda x: x[1], reverse=False)
-        logger.info(f"Selected GPU: {possible_gpus[0][0]} with {possible_gpus[0][1]} GB free memory")
+        logger.info(
+            f"Selected GPU: {possible_gpus[0][0]} with {possible_gpus[0][1]} GB free memory"
+        )
         return [possible_gpus[0][0]]
     else:
         selected_gpus: List[int] = []
@@ -201,13 +221,18 @@ def select_optimal_gpus(required_memory: float) -> List[int]:
             selected_gpus.append(gpu)
             total_available += free_mem
             if total_available >= required_memory:
-                logger.info(f"Selected GPUs: {selected_gpus} with total available memory: {total_available} GB")
+                logger.info(
+                    f"Selected GPUs: {selected_gpus} with total available memory: {total_available} GB"
+                )
                 return selected_gpus  # Use multiple GPUs
 
     logger.warning("Not enough memory available on any GPU")
     return []  # Not enough memory available
 
-def get_optimal_gpu_set(model_name: str, dtype: Literal["fp32", "fp16", "int8"]="fp16") -> List[int]:
+
+def get_optimal_gpu_set(
+    model_name: str, dtype: Literal["fp32", "fp16", "int8"] = "fp16"
+) -> List[int]:
     """
     Get the optimal set of GPUs for the given model and data type.
 
@@ -225,15 +250,17 @@ def get_optimal_gpu_set(model_name: str, dtype: Literal["fp32", "fp16", "int8"]=
     # total_mem = 0
     return select_optimal_gpus(total_mem)
 
-def get_available_ports(start: int=5001, end: int=5100):
+
+def get_available_ports(start: int = 5001, end: int = 5100):
     logging.info("Gathering available ports...")
     available_ports: list[int] = []
     for port in range(start, end):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(('localhost', port)) != 0:  # Port is available
+            if sock.connect_ex(("localhost", port)) != 0:  # Port is available
                 available_ports.append(port)
     logging.info(f"Available ports: {available_ports}")
     return available_ports
+
 
 def base64_to_image(base64_str: str) -> Image.Image:
     image_data = base64.b64decode(base64_str)

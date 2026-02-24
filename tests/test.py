@@ -5,6 +5,7 @@ from typing import Dict, Any
 # Define the URL
 url = "http://localhost:1121/infer"
 
+
 # Define the function to send a POST request with unique content
 def send_request(thread_id: int):
     custom_content = f"Tell me about superhero number {thread_id}"
@@ -15,11 +16,11 @@ def send_request(thread_id: int):
             "top_p": 0.8,
             "top_k": 50,
             "max_tokens": 2048,
-            "repetition_penalty": 1.05
+            "repetition_penalty": 1.05,
         },
         "type": "vllm-text-generation",
         "model_name": "Qwen/Qwen2.5-14B-Instruct",
-        "timeout": 0
+        "timeout": 0,
     }
 
     try:
@@ -30,6 +31,7 @@ def send_request(thread_id: int):
     except Exception as e:
         print(f"[Thread {thread_id}] Error: {e}")
 
+
 # Run 100 threads
 def main():
     num_threads = 50
@@ -37,6 +39,7 @@ def main():
         futures = [executor.submit(send_request, i) for i in range(num_threads)]
         for _ in as_completed(futures):
             pass  # Output already handled in send_request
+
 
 if __name__ == "__main__":
     main()
@@ -63,7 +66,7 @@ if __name__ == "__main__":
 
 # CRITICAL REQUIREMENTS:
 # 1. Maintain exact spacing, indentation, and line breaks
-# 2. Preserve tables, lists, headers, and hierarchical structure  
+# 2. Preserve tables, lists, headers, and hierarchical structure
 # 3. Keep mathematical formulas, equations, and special characters intact
 # 4. Maintain bullet points, numbering, and formatting elements
 # 5. Preserve any diagrams or flowchart text labels
@@ -73,7 +76,7 @@ if __name__ == "__main__":
 
 # FORMAT YOUR RESPONSE AS:
 # Pure text extraction maintaining original structure
-# Use markdown formatting only where it helps preserve structure (tables, headers, lists)  
+# Use markdown formatting only where it helps preserve structure (tables, headers, lists)
 # Indicate page/section breaks where visible
 # Preserve any footer/header information
 
@@ -88,7 +91,7 @@ if __name__ == "__main__":
 #     "payload": {
 #         "inputs": [
 #             {
-#                 "role": "user", 
+#                 "role": "user",
 #                 "content": [
 #                     {
 #                         "type": "text",
@@ -133,11 +136,11 @@ if __name__ == "__main__":
 #         return response.json()["response"]
 #     try:
 #         logger.info("Running batch model inference")
-#         # batch_inputs = []            
+#         # batch_inputs = []
 #         if state.get("crawled_data"):
 #             with ThreadPoolExecutor() as executor:
 #                 futures = []
-#                 for url, data in list(state["crawled_data"].items()):  
+#                 for url, data in list(state["crawled_data"].items()):
 #                     if data.get("html"):
 #                         prompt = f"""
 #     Extract product information from this webpage:
@@ -167,18 +170,18 @@ if __name__ == "__main__":
 #                             "model_name": "Qwen/Qwen2.5-14B-Instruct",
 #                             "timeout": 0
 #                         }
-                        
+
 #                         logger.info(f"Sending {len(prompt)} queries to model inference")
 #                         futures.append(executor.submit(inferModel, payload))
-                        
+
 #                         for future in as_completed(futures):
 #                             try:
 #                                 result = future.result()
 #                                 state
 #                             except Exception:
 #                                 continue
-                            
-                        
+
+
 #                         if response.status_code == 200:
 #                             result = response.json()
 #                             state["model_inference"] = result
@@ -187,9 +190,9 @@ if __name__ == "__main__":
 #                             logger.error(f"Model inference failed with status: {response.status_code}")
 #                             logger.error(f"Response: {response.text[:500]}")
 #                             state["model_inference"] = None
-                    
+
 #     except Exception as e:
 #         logger.error(f"Error in model inference node: {e}")
 #         state["model_inference"] = None
-        
+
 #     return state

@@ -15,6 +15,7 @@ from typing import Dict, Any
 MODEL_SERVER_URL = "http://localhost:1121/infer"
 CLAUDE_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 
+
 def test_simple_request():
     """Test a simple text request to Claude."""
     print("=" * 60)
@@ -26,13 +27,16 @@ def test_simple_request():
         "model_name": CLAUDE_MODEL_ID,
         "payload": {
             "messages": [
-                {"role": "user", "content": "Hello! Please introduce yourself in one sentence."}
+                {
+                    "role": "user",
+                    "content": "Hello! Please introduce yourself in one sentence.",
+                }
             ],
             "max_tokens": 100,
-            "temperature": 0.1
+            "temperature": 0.1,
         },
         "timeout": 60,
-        "max_retries": 3
+        "max_retries": 3,
     }
 
     print(f"Sending request: {json.dumps(payload, indent=2)}")
@@ -57,6 +61,7 @@ def test_simple_request():
 
     print("\n")
 
+
 def test_conversation():
     """Test a multi-turn conversation with Claude."""
     print("=" * 60)
@@ -70,16 +75,18 @@ def test_conversation():
             "messages": [
                 {"role": "user", "content": "What is 15 + 27?"},
                 {"role": "assistant", "content": "15 + 27 = 42"},
-                {"role": "user", "content": "Now multiply that by 3"}
+                {"role": "user", "content": "Now multiply that by 3"},
             ],
             "max_tokens": 100,
-            "temperature": 0.1
+            "temperature": 0.1,
         },
         "timeout": 60,
-        "max_retries": 3
+        "max_retries": 3,
     }
 
-    print(f"Sending conversation: {json.dumps(payload['payload']['messages'], indent=2)}")
+    print(
+        f"Sending conversation: {json.dumps(payload['payload']['messages'], indent=2)}"
+    )
     print("\nWaiting for response...")
 
     start_time = time.time()
@@ -101,6 +108,7 @@ def test_conversation():
 
     print("\n")
 
+
 def test_longer_generation():
     """Test a request that requires longer generation."""
     print("=" * 60)
@@ -114,14 +122,14 @@ def test_longer_generation():
             "messages": [
                 {
                     "role": "user",
-                    "content": "Write a short haiku about artificial intelligence."
+                    "content": "Write a short haiku about artificial intelligence.",
                 }
             ],
             "max_tokens": 200,
-            "temperature": 0.7
+            "temperature": 0.7,
         },
         "timeout": 60,
-        "max_retries": 3
+        "max_retries": 3,
     }
 
     print(f"Prompt: {payload['payload']['messages'][0]['content']}")
@@ -146,6 +154,7 @@ def test_longer_generation():
 
     print("\n")
 
+
 def test_with_higher_retries():
     """Test request with custom max_retries."""
     print("=" * 60)
@@ -156,14 +165,12 @@ def test_with_higher_retries():
         "type": "claude",
         "model_name": CLAUDE_MODEL_ID,
         "payload": {
-            "messages": [
-                {"role": "user", "content": "Count from 1 to 5."}
-            ],
+            "messages": [{"role": "user", "content": "Count from 1 to 5."}],
             "max_tokens": 50,
-            "temperature": 0.1
+            "temperature": 0.1,
         },
         "timeout": 60,
-        "max_retries": 5  # Higher than default
+        "max_retries": 5,  # Higher than default
     }
 
     print(f"Max retries set to: {payload['max_retries']}")
@@ -189,6 +196,7 @@ def test_with_higher_retries():
 
     print("\n")
 
+
 def test_parallel_requests():
     """Test multiple parallel requests to see load balancing."""
     print("=" * 60)
@@ -206,10 +214,10 @@ def test_parallel_requests():
                     {"role": "user", "content": f"Say 'Request {request_id} completed'"}
                 ],
                 "max_tokens": 50,
-                "temperature": 0.1
+                "temperature": 0.1,
             },
             "timeout": 60,
-            "max_retries": 3
+            "max_retries": 3,
         }
 
         start_time = time.time()
@@ -220,7 +228,9 @@ def test_parallel_requests():
             "request_id": request_id,
             "status_code": response.status_code,
             "elapsed_time": elapsed_time,
-            "response": response.json() if response.status_code == 200 else response.text
+            "response": (
+                response.json() if response.status_code == 200 else response.text
+            ),
         }
 
     print("Sending 5 parallel requests...")
@@ -228,21 +238,24 @@ def test_parallel_requests():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(send_request, i) for i in range(1, 6)]
-        results = [future.result() for future in concurrent.futures.as_completed(futures)]
+        results = [
+            future.result() for future in concurrent.futures.as_completed(futures)
+        ]
 
     total_time = time.time() - start_time
 
     print(f"\nAll requests completed in {total_time:.2f}s\n")
 
-    for result in sorted(results, key=lambda x: x['request_id']):
+    for result in sorted(results, key=lambda x: x["request_id"]):
         print(f"Request {result['request_id']}:")
         print(f"  Status: {result['status_code']}")
         print(f"  Time: {result['elapsed_time']:.2f}s")
-        if result['status_code'] == 200:
+        if result["status_code"] == 200:
             print(f"  Response: {result['response'].get('response', 'N/A')}")
         else:
             print(f"  Error: {result['response']}")
         print()
+
 
 def main():
     """Run all tests."""
@@ -267,7 +280,7 @@ def main():
         test_conversation,
         test_longer_generation,
         test_with_higher_retries,
-        test_parallel_requests
+        test_parallel_requests,
     ]
 
     for i, test in enumerate(tests, 1):
@@ -283,6 +296,7 @@ def main():
     print("=" * 60)
     print("Test Suite Completed")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     main()

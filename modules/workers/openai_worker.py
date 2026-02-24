@@ -13,42 +13,47 @@ load_dotenv()
 
 API_KEYS = os.environ.get("OPENAI_API_KEYS", "").split(" ")
 
+
 def call_openai(payload: Dict[str, Any], api_key: str):
     url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     response = requests.post(url, headers=headers, json=payload)
     response.raise_for_status()
-    return response.json()['choices'][0]['message']['content']
+    return response.json()["choices"][0]["message"]["content"]
+
 
 class OpenAIWorker(Worker):
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
-        
+
         self.configure(**kwargs)
-        
+
     def configure(self, **kwargs: Any):
         for key, value in kwargs.items():
             setattr(self, key, value)
-    
+
     def start_processor(self, **kwargs: Any) -> None:
         processes: List[Process] = []
         for api_key in API_KEYS:
-            process = Process(target=super().start_processor, args=(api_key, {
-                'start_time': self.manager.Value('d', time.time()),
-                'minute_start_time': self.manager.Value('d', time.time()),
-                'total_requests_count': self.manager.Value('i', 0),
-                'minute_requests_count': self.manager.Value('i', 0),
-                'counts_lock': self.manager.Lock()
-            },))
+            process = Process(
+                target=super().start_processor,
+                args=(
+                    api_key,
+                    {
+                        "start_time": self.manager.Value("d", time.time()),
+                        "minute_start_time": self.manager.Value("d", time.time()),
+                        "total_requests_count": self.manager.Value("i", 0),
+                        "minute_requests_count": self.manager.Value("i", 0),
+                        "counts_lock": self.manager.Lock(),
+                    },
+                ),
+            )
             process.start()
             processes.append(process)
 
         for process in processes:
             process.join()
-        
+
     def worker(self, **kwargs: Any):
         api_key: str = kwargs.get("api_key", "")
         shared_data: Dict[str, Any] = kwargs.get("shared_data", {})
@@ -57,26 +62,28 @@ class OpenAIWorker(Worker):
         last_active = time.time()
         while True:
             now = time.time()
-            with shared_data['counts_lock']:
-                if now - shared_data['start_time'].value > 86400:
+            with shared_data["counts_lock"]:
+                if now - shared_data["start_time"].value > 86400:
                     send_message("openai", "daily_limit resetted")
-                    shared_data['total_requests_count'].value = 0
-                    shared_data['start_time'].value = now
-                if now - shared_data['minute_start_time'].value > 60:
-                    shared_data['minute_requests_count'].value = 0
-                    shared_data['minute_start_time'].value = now
+                    shared_data["total_requests_count"].value = 0
+                    shared_data["start_time"].value = now
+                if now - shared_data["minute_start_time"].value > 60:
+                    shared_data["minute_requests_count"].value = 0
+                    shared_data["minute_start_time"].value = now
 
-                if (shared_data['minute_requests_count'].value < 500 and
-                        shared_data['total_requests_count'].value < 10000):
+                if (
+                    shared_data["minute_requests_count"].value < 500
+                    and shared_data["total_requests_count"].value < 10000
+                ):
                     requests = self.dequeue_request()
                     if requests:
                         uuid, entry = requests[0]
-                        shared_data['minute_requests_count'].value += 1
-                        shared_data['total_requests_count'].value += 1
+                        shared_data["minute_requests_count"].value += 1
+                        shared_data["total_requests_count"].value += 1
                     else:
                         uuid, entry = None, None
                 else:
-                    if shared_data['total_requests_count'].value >= 10000:
+                    if shared_data["total_requests_count"].value >= 10000:
                         send_message("openai", "crossed_daily_limit")
                     uuid = None
                     entry = None

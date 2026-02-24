@@ -21,7 +21,7 @@ def example_embeddings():
         "The cat sits on the mat",
         "A feline rests on the rug",
         "Python is a programming language",
-        "Java is used for software development"
+        "Java is used for software development",
     ]
 
     print(f"\nInput sentences:")
@@ -62,7 +62,7 @@ def example_chat_completion():
 
     messages = [
         {"role": "system", "content": "You are a helpful coding assistant."},
-        {"role": "user", "content": "How do I read a CSV file in Python?"}
+        {"role": "user", "content": "How do I read a CSV file in Python?"},
     ]
 
     print("\nUser: How do I read a CSV file in Python?")
@@ -72,7 +72,9 @@ def example_chat_completion():
 
     # Follow-up question
     messages.append({"role": "assistant", "content": response})
-    messages.append({"role": "user", "content": "Can you show me an example with pandas?"})
+    messages.append(
+        {"role": "user", "content": "Can you show me an example with pandas?"}
+    )
 
     print("\nUser: Can you show me an example with pandas?")
 
@@ -97,7 +99,7 @@ def example_semantic_search():
         "Neural networks are inspired by biological neurons",
         "JavaScript is commonly used for web development",
         "Deep learning uses multiple layers of neural networks",
-        "React is a JavaScript library for building user interfaces"
+        "React is a JavaScript library for building user interfaces",
     ]
 
     # Query
@@ -146,10 +148,7 @@ def example_batch_processing():
     client = ModelServerClient()
 
     # Large batch of texts
-    texts = [
-        f"This is document number {i} about various topics"
-        for i in range(1, 11)
-    ]
+    texts = [f"This is document number {i} about various topics" for i in range(1, 11)]
 
     print(f"\nProcessing {len(texts)} documents in a single batch...")
 
@@ -178,7 +177,7 @@ def example_rag_pipeline():
         "Python was created by Guido van Rossum and first released in 1991.",
         "The Amazon rainforest is the largest tropical rainforest in the world.",
         "Albert Einstein developed the theory of relativity in the early 20th century.",
-        "The Great Wall of China is over 13,000 miles long."
+        "The Great Wall of China is over 13,000 miles long.",
     ]
 
     query = "When was Python created?"
@@ -221,12 +220,12 @@ def example_rag_pipeline():
     messages = [
         {
             "role": "system",
-            "content": "You are a helpful assistant. Answer the question based on the provided context."
+            "content": "You are a helpful assistant. Answer the question based on the provided context.",
         },
         {
             "role": "user",
-            "content": f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:"
-        }
+            "content": f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:",
+        },
     ]
 
     answer = client.openai_chat_completion(messages, temperature=0.3)
@@ -253,7 +252,7 @@ def example_sentiment_analysis():
         "This is the worst experience ever.",
         "It's okay, nothing special.",
         "Absolutely brilliant and outstanding!",
-        "Very disappointed and unhappy."
+        "Very disappointed and unhappy.",
     ]
 
     print("\nReference sentences:")
@@ -285,7 +284,7 @@ def example_sentiment_analysis():
         sentiment = "POSITIVE" if pos_sim > neg_sim else "NEGATIVE"
         confidence = abs(pos_sim - neg_sim)
 
-        print(f"\n  {i}. \"{sent}\"")
+        print(f'\n  {i}. "{sent}"')
         print(f"     Sentiment: {sentiment} (confidence: {confidence:.4f})")
         print(f"     Positive similarity: {pos_sim:.4f}")
         print(f"     Negative similarity: {neg_sim:.4f}")
