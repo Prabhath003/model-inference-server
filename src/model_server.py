@@ -11,12 +11,22 @@ import logging
 
 from .utils import get_optimal_gpu_set
 
+
 class ModelServer:
-    def __init__(self, port: int, model_name: str, type: Literal["text-generation", "openai", "gen-ai", "sent-trans", "ollama"]="text-generation"):
+    def __init__(
+        self,
+        port: int,
+        model_name: str,
+        type: Literal[
+            "text-generation", "openai", "gen-ai", "sent-trans", "ollama"
+        ] = "text-generation",
+    ):
         self.model_name = model_name
         self.type = type
         self.port = port
-        logging.info(f"Initialized ModelServer with model: {model_name}, type: {type}, port: {port}")
+        logging.info(
+            f"Initialized ModelServer with model: {model_name}, type: {type}, port: {port}"
+        )
 
     def start_server(self):
         app = Flask(__name__)
@@ -50,10 +60,10 @@ class ModelServer:
         @app.route("/check_health", methods=["GET"])
         def check_health():
             return jsonify({"status": "healthy"}), 200
-        
+
         logging.info(f"Starting server on port {self.port}")
         app.run(port=self.port)
-        
+
     def start_text_generation_server(self, app: Flask, available_gpus: list[int]):
         try:
             model = pipeline(
@@ -62,7 +72,7 @@ class ModelServer:
                 device=available_gpus[0],
                 torch_dtype=torch.bfloat16,
                 clean_up_tokenization_spaces=False,
-                trust_remote_code=True
+                trust_remote_code=True,
             )
         except RuntimeError:
             logging.error("Error loading the model.")
@@ -87,7 +97,7 @@ class ModelServer:
         #             request_id, data = request_queue.get()
         #             batch.append(data)
         #             batch_ids.append(request_id)
-                
+
         #         if batch:
         #             temperature, max_new_tokens = key
         #             input_texts = [item["input_text"] for item in batch]
@@ -115,10 +125,14 @@ class ModelServer:
             if not input_text:
                 logging.error("Missing input_text in request")
                 return jsonify({"error": "Missing input_text"}), 400
-            
+
             with lock:
                 with torch.no_grad():
-                    response = model(input_text, temperature=temperature, max_new_tokens=max_new_tokens)
+                    response = model(
+                        input_text,
+                        temperature=temperature,
+                        max_new_tokens=max_new_tokens,
+                    )
                 torch.cuda.empty_cache()
 
             # request_id = id(data)
@@ -136,10 +150,12 @@ class ModelServer:
             return jsonify(response), 200
 
     def start_sent_trans_server(self, app: Flask, available_gpus: list[int]):
-        model = SentenceTransformer(self.model_name, device=f"cuda:{available_gpus[0]}", trust_remote_code=True)
+        model = SentenceTransformer(
+            self.model_name, device=f"cuda:{available_gpus[0]}", trust_remote_code=True
+        )
         model.eval()
         logging.info(f"Loaded SentenceTransformer model {self.model_name}")
-        
+
         # TODO: implement dynamic batching
         # request_queue = Queue()
         # response_dict = {}
@@ -153,7 +169,7 @@ class ModelServer:
         #             request_id, data = request_queue.get()
         #             batch.append(data)
         #             batch_ids.append(request_id)
-                
+
         #         if batch:
         #             input_texts = [item["input_text"] for item in batch]
         #             embeddings = model.encode(input_texts)
@@ -172,7 +188,7 @@ class ModelServer:
             if not input_text:
                 logging.error("Missing input_text in request")
                 return jsonify({"error": "Missing input_text"}), 400
-            
+
             with lock:
                 with torch.no_grad():
                     response = model.encode(input_text)
@@ -191,7 +207,7 @@ class ModelServer:
 
             logging.info(f"Inference completed for input: {input_text}")
             return jsonify({"embeddings": response.tolist()}), 200
-        
+
     def start_openai_server(self, app: Flask):
         @app.route("/infer", methods=["POST"])
         def infer():
@@ -203,17 +219,27 @@ class ModelServer:
             if not input_text or not api_key:
                 logging.error("Missing input_text or api_key in request")
                 return jsonify({"error": "Missing input_text or api_key"}), 400
-            
+
             openai_client = OpenAI(api_key=api_key)
-            response = [{"generated_text":[{"content": openai_client.chat.completions.create(
-                model=self.model_name,
-                messages=input_text,
-                temperature=temperature,
-                max_completion_tokens=max_new_tokens
-            ).choices[0].message.content}]}]
+            response = [
+                {
+                    "generated_text": [
+                        {
+                            "content": openai_client.chat.completions.create(
+                                model=self.model_name,
+                                messages=input_text,
+                                temperature=temperature,
+                                max_completion_tokens=max_new_tokens,
+                            )
+                            .choices[0]
+                            .message.content
+                        }
+                    ]
+                }
+            ]
             logging.info(f"Inference completed for input: {input_text}")
             return jsonify(response), 200
-    
+
     def start_genai_server(self, app: Flask):
         @app.route("/infer", methods=["POST"])
         def infer():
@@ -225,13 +251,29 @@ class ModelServer:
             if not input_text or not api_key:
                 logging.error("Missing input_text or api_key in request")
                 return jsonify({"error": "Missing input_text or api_key"}), 400
-            
+
             genai.configure(api_key=api_key)
-            client = genai.GenerativeModel(self.model_name, generation_config={"temperature": temperature, "max_output_tokens": max_new_tokens})
-            response = [{"generated_text":[{"content": client.generate_content("\n".join([item["content"] for item in input_text])).text}]}]
+            client = genai.GenerativeModel(
+                self.model_name,
+                generation_config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_new_tokens,
+                },
+            )
+            response = [
+                {
+                    "generated_text": [
+                        {
+                            "content": client.generate_content(
+                                "\n".join([item["content"] for item in input_text])
+                            ).text
+                        }
+                    ]
+                }
+            ]
             logging.info(f"Inference completed for input: {input_text}")
             return jsonify(response), 200
-        
+
     def start_ollama_server(self, app: Flask):
         # TODO: Implement Ollama server
         pass

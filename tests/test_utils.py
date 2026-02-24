@@ -1,5 +1,11 @@
 import unittest
-from src.utils import get_model_size, estimate_memory, get_available_gpus, select_optimal_gpus
+from src.utils import (
+    get_model_size,
+    estimate_memory,
+    get_available_gpus,
+    select_optimal_gpus,
+)
+
 
 class TestUtils(unittest.TestCase):
 
@@ -25,6 +31,7 @@ class TestUtils(unittest.TestCase):
         required_memory = 8.0  # GB
         selected_gpus = select_optimal_gpus(required_memory)
         self.assertIsInstance(selected_gpus, list)
+
 
 if __name__ == "__main__":
     unittest.main()

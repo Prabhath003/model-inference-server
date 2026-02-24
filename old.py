@@ -28,6 +28,7 @@ GENAI_KEY = ""
 genai.configure(api_key=GENAI_KEY)
 openai_client = OpenAI(api_key=OpenAI_KEY)
 
+
 class ModelManager:
     def __init__(self):
         self.models = {}
@@ -57,7 +58,7 @@ class ModelManager:
                 available_gpus = self.get_sorted_gpus_by_memory()
                 if not available_gpus:
                     raise RuntimeError("No available GPUs to load the model.")
-                
+
                 try:
                     if type == "text-generation":
                         # Try loading the model on the GPU with the most free memory
@@ -68,12 +69,16 @@ class ModelManager:
                                 model=model_name,
                                 device=available_gpus[0],
                                 clean_up_tokenization_spaces=False,
-                                trust_remote_code=True
+                                trust_remote_code=True,
                             )
                         except RuntimeError:
-                            logger.warning(f"Model {model_name} could not fit on a single GPU. Splitting across GPUs.")
+                            logger.warning(
+                                f"Model {model_name} could not fit on a single GPU. Splitting across GPUs."
+                            )
                             # Load model across multiple GPUs (model parallelism)
-                            model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16)
+                            model = AutoModelForCausalLM.from_pretrained(
+                                model_name, torch_dtype=torch.bfloat16
+                            )
                             tokenizer = AutoTokenizer.from_pretrained(model_name)
                             device_map = "balanced"
                             self.models[model_name] = pipeline(
@@ -83,13 +88,17 @@ class ModelManager:
                                 device_map=device_map,
                                 torch_dtype=torch.bfloat16,
                                 clean_up_tokenization_spaces=False,
-                                trust_remote_code=True
+                                trust_remote_code=True,
                             )
                     elif type == "sent-trans":
-                        self.models[model_name] = SentenceTransformer(model_name, trust_remote_code=True)
+                        self.models[model_name] = SentenceTransformer(
+                            model_name, trust_remote_code=True
+                        )
                         self.models[model_name].eval()
                     else:
-                        raise ValueError("Invalid model type. Supported types: text-generation, embedding")
+                        raise ValueError(
+                            "Invalid model type. Supported types: text-generation, embedding"
+                        )
                 except Exception as e:
                     raise RuntimeError(f"Failed to load model {model_name}: {str(e)}")
 
@@ -131,7 +140,7 @@ class ModelManager:
                     if isinstance(model, SentenceTransformer):
                         del self.models[model_name]
                     elif isinstance(model, Pipeline):
-                        model.model.to('cpu')
+                        model.model.to("cpu")
                         del self.models[model_name]
                     else:
                         del self.models[model_name]
@@ -139,7 +148,9 @@ class ModelManager:
                 self.unload_cuda_context()
             time.sleep(60)
 
+
 manager = ModelManager()
+
 
 @app.route("/infer", methods=["POST"])
 def query_model():
@@ -147,7 +158,12 @@ def query_model():
     Handle POST requests to query a model. The request must contain 'model_name', 'query', and 'type'.
     """
     data = request.json
-    if not data or "model_name" not in data or "input_text" not in data or "type" not in data:
+    if (
+        not data
+        or "model_name" not in data
+        or "input_text" not in data
+        or "type" not in data
+    ):
         return jsonify({"error": "Invalid request"}), 400
 
     model_name = data["model_name"]
@@ -159,25 +175,49 @@ def query_model():
     try:
         if type == "text-generation":
             if model_name in ["gpt-4o-mini"]:
-                response = [{"generated_text":[{"content": openai_client.chat.completions.create(
-                    model=model_name,
-                    messages=input_text,
-                    temperature=temperature,
-                    max_completion_tokens=max_new_tokens
-                ).choices[0].message.content}]}]
+                response = [
+                    {
+                        "generated_text": [
+                            {
+                                "content": openai_client.chat.completions.create(
+                                    model=model_name,
+                                    messages=input_text,
+                                    temperature=temperature,
+                                    max_completion_tokens=max_new_tokens,
+                                )
+                                .choices[0]
+                                .message.content
+                            }
+                        ]
+                    }
+                ]
             elif model_name in ["gemini-1.5-flash"]:
                 time.sleep(10)
                 client = genai.GenerativeModel(model_name)
-                response = [{"generated_text":[{"content": client.generate_content("\n".join([item["content"] for item in input_text])).text}]}]
+                response = [
+                    {
+                        "generated_text": [
+                            {
+                                "content": client.generate_content(
+                                    "\n".join([item["content"] for item in input_text])
+                                ).text
+                            }
+                        ]
+                    }
+                ]
             else:
                 model = manager.get_model(type, model_name)
-                response = model(input_text, temperature=temperature, max_new_tokens=max_new_tokens)
+                response = model(
+                    input_text, temperature=temperature, max_new_tokens=max_new_tokens
+                )
         elif type == "sent-trans":
             model = manager.get_model(type, model_name)
             embeddings = model.encode(input_text)
             response = {"embeddings": embeddings.tolist()}
         else:
-            raise ValueError("Invalid model type. Supported types: text-generation, embedding")
+            raise ValueError(
+                "Invalid model type. Supported types: text-generation, embedding"
+            )
         torch.cuda.empty_cache()
         return jsonify(response)
     except ValueError as ve:
@@ -189,6 +229,7 @@ def query_model():
     except Exception as e:
         logger.error(f"Exception: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     # Start a background thread to offload idle models
