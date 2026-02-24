@@ -145,7 +145,7 @@ dependencies:
       - openai==2.21.0
       - openai-harmony==0.0.8
       - opencv-python-headless==4.13.0.92
-      - outlines-core==0.2.11
+      - outlines-core==0.2.14
       - packaging==25.0
       - partial-json-parser==0.2.1.1.post7
       - pathspec==1.0.4
